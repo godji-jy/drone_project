@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>วาดเส้นทางให้โดรนบิน</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Noto Sans Thai", sans-serif;
+         background: #14161a; color: #e6e6e6; }
+  h1 { font-size: 20px; margin: 0; padding: 14px 20px; border-bottom: 1px solid #2a2e35; }
+  /* 3 คอลัมน์: ซ้าย=ความสูง, กลาง=วาด, ขวา=การเคลื่อนที่ */
+  .layout { display: grid; grid-template-columns: 280px minmax(360px, 1fr) 400px;
+            gap: 14px; padding: 14px; align-items: start; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background: #1d2026; border: 1px solid #2a2e35; border-radius: 10px; padding: 14px; }
+  .panel h2 { margin: 0 0 10px; font-size: 15px; color: #9aa4b2; font-weight: 600; }
+  canvas { display: block; width: 100%; background: #101216; border-radius: 8px; }
+  #draw { touch-action: none; cursor: crosshair; }
+
+  .big { font-size: 56px; font-weight: 700; line-height: 1; color: #4cc2ff; }
+  .big small { font-size: 18px; color: #9aa4b2; font-weight: 400; }
+  .gaugeRow { display: flex; gap: 14px; margin: 14px 0; align-items: stretch; }
+  .gauge { position: relative; width: 38px; height: 150px; background: #101216;
+           border: 1px solid #2a2e35; border-radius: 8px; overflow: hidden; }
+  #fill { position: absolute; bottom: 0; left: 0; right: 0; height: 0%;
+          background: linear-gradient(#4cc2ff, #2b7fb0); transition: height .25s; }
+  .info { flex: 1; font-size: 14px; line-height: 1.9; }
+  .info b { color: #9aa4b2; font-weight: 500; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; align-items: end; }
+  label { font-size: 13px; color: #9aa4b2; display: flex; flex-direction: column; gap: 4px; }
+  input { width: 110px; padding: 8px; background: #101216; color: #e6e6e6;
+          border: 1px solid #2a2e35; border-radius: 6px; font-size: 15px; }
+  button { padding: 10px 18px; border: 0; border-radius: 8px; font-size: 15px;
+           cursor: pointer; color: #fff; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  #start { background: #1f9d55; }
+  #stop  { background: #d64545; }
+  #clear { background: #3b4250; }
+  #msg { margin-top: 10px; min-height: 20px; color: #ffb84d; font-size: 14px; }
+  #log { margin-top: 10px; background: #101216; border-radius: 8px; padding: 10px;
+         height: 130px; overflow-y: auto; font-size: 12.5px; white-space: pre-wrap;
+         color: #9aa4b2; font-family: ui-monospace, monospace; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         background: #d64545; margin-right: 6px; }
+  .dot.on { background: #1f9d55; }
+  .legend { font-size: 12.5px; color: #9aa4b2; margin-top: 10px; line-height: 1.8; }
+  .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h1>วาดเส้นทางให้โดรนบิน <span id="connWrap" style="font-size:13px;color:#9aa4b2;margin-left:12px">
+  <span class="dot" id="connDot"></span><span id="conn">ยังไม่เชื่อมต่อ</span></span></h1>
+
+<div class="layout">
+
+  <!-- ============ ซ้าย: ความสูง ============ -->
+  <section class="panel">
+    <h2>ความสูง</h2>
+    <div class="big"><span id="alt">0.0</span> <small>เมตร</small></div>
+    <div class="gaugeRow">
+      <div class="gauge"><div id="fill"></div></div>
+      <div class="info">
+        <div><b>สถานะ:</b> <span id="armed">-</span></div>
+        <div><b>โหมด:</b> <span id="mode">-</span></div>
+        <div><b>งาน:</b> <span id="status">-</span></div>
+      </div>
+    </div>
+    <h2>กราฟความสูงย้อนหลัง</h2>
+    <canvas id="altChart" width="260" height="150"></canvas>
+  </section>
+
+  <!-- ============ กลาง: กระดานวาด ============ -->
+  <section class="panel">
+    <h2>วาดรูปที่ต้องการให้โดรนบิน (กดค้างแล้วลากเมาส์)</h2>
+    <canvas id="draw" width="600" height="600"></canvas>
+    <div class="controls">
+      <label>ขนาดรูปจริง (เมตร)<input id="sizeIn" type="number" value="30" min="5" max="200"></label>
+      <label>ความสูงที่บิน (เมตร)<input id="altIn" type="number" value="15" min="3" max="60"></label>
+      <button id="start">เริ่มบิน</button>
+      <button id="stop">หยุดและลงจอด</button>
+      <button id="clear">ล้างกระดาน</button>
+    </div>
+    <div id="msg"></div>
+    <div id="log"></div>
+  </section>
+
+  <!-- ============ ขวา: การเคลื่อนที่ ============ -->
+  <section class="panel">
+    <h2>การเคลื่อนที่ (มองจากด้านบน)</h2>
+    <canvas id="move" width="400" height="400"></canvas>
+    <div class="info" style="margin-top:10px">
+      <div><b>เหนือ:</b> <span id="n">0.0</span> ม. &nbsp; <b>ตะวันออก:</b> <span id="e">0.0</span> ม.</div>
+      <div><b>ห่างจุดเริ่มต้น:</b> <span id="dist">0.0</span> ม.</div>
+    </div>
+    <div class="legend">
+      <div><i style="background:#5b7cff"></i>เส้นที่วางแผนไว้ (จากรูปที่วาด)</div>
+      <div><i style="background:#ff9f43"></i>เส้นที่โดรนบินจริง</div>
+      <div><i style="background:#1f9d55;height:10px;width:10px;border-radius:50%"></i>ตำแหน่งโดรนตอนนี้</div>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ===================== ส่วนที่ 1: กระดานวาด ===================== */
+const draw = $('draw'), dctx = draw.getContext('2d');
+let pts = [], drawing = false;
+
+function pos(e) {  // แปลงตำแหน่งเมาส์เป็นพิกัดบนกระดาน
+  const r = draw.getBoundingClientRect();
+  return [(e.clientX - r.left) * draw.width / r.width,
+          (e.clientY - r.top) * draw.height / r.height];
+}
+draw.addEventListener('pointerdown', e => {
+  drawing = true; pts = [pos(e)]; draw.setPointerCapture(e.pointerId); redraw();
+});
+draw.addEventListener('pointermove', e => {
+  if (!drawing) return;
+  const p = pos(e), l = pts[pts.length - 1];
+  if (Math.hypot(p[0] - l[0], p[1] - l[1]) > 2) { pts.push(p); redraw(); }
+});
+draw.addEventListener('pointerup', () => { drawing = false; });
+
+function redraw() {
+  const W = draw.width, H = draw.height;
+  dctx.fillStyle = '#101216'; dctx.fillRect(0, 0, W, H);
+  dctx.strokeStyle = '#1e222a'; dctx.lineWidth = 1;
+  for (let i = 0; i <= W; i += 50) {
+    dctx.beginPath(); dctx.moveTo(i, 0); dctx.lineTo(i, H); dctx.stroke();
+    dctx.beginPath(); dctx.moveTo(0, i); dctx.lineTo(W, i); dctx.stroke();
+  }
+  dctx.fillStyle = '#4a5260'; dctx.font = '16px sans-serif';
+  dctx.fillText('N (เหนือ)', W / 2 - 28, 20);
+  if (pts.length === 0) return;
+  dctx.strokeStyle = '#5b7cff'; dctx.lineWidth = 3; dctx.lineJoin = 'round'; dctx.lineCap = 'round';
+  dctx.beginPath(); dctx.moveTo(pts[0][0], pts[0][1]);
+  for (const p of pts) dctx.lineTo(p[0], p[1]);
+  dctx.stroke();
+  dctx.fillStyle = '#1f9d55'; dctx.beginPath(); dctx.arc(pts[0][0], pts[0][1], 7, 0, 7); dctx.fill();   // จุดเริ่ม
+  const e = pts[pts.length - 1];
+  dctx.fillStyle = '#d64545'; dctx.beginPath(); dctx.arc(e[0], e[1], 7, 0, 7); dctx.fill();            // จุดจบ
+}
+redraw();
+
+/* ===================== ส่วนที่ 2: ปุ่มต่างๆ ===================== */
+function msg(t) { $('msg').textContent = t; }
+
+$('clear').onclick = () => { pts = []; redraw(); msg(''); };
+
+$('start').onclick = async () => {
+  if (pts.length < 5) { msg('วาดรูปบนกระดานก่อน แล้วค่อยกดเริ่มบิน'); return; }
+  msg('');
+  const body = { points: pts, size: +$('sizeIn').value, alt: +$('altIn').value };
+  try {
+    const r = await fetch('/start', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!j.ok) msg(j.error); else msg('ส่งรูปให้โดรนแล้ว ใช้ ' + j.points + ' จุด');
+  } catch (e) { msg('ต่อเซิร์ฟเวอร์ไม่ได้ ตรวจว่ารัน python server.py อยู่'); }
+};
+
+$('stop').onclick = () => { fetch('/stop', { method: 'POST' }); };
+
+/* ===================== ส่วนที่ 3: กราฟความสูง (ซ้าย) ===================== */
+const altHist = [];
+function drawAlt() {
+  const c = $('altChart'), x = c.getContext('2d'), W = c.width, H = c.height;
+  x.fillStyle = '#101216'; x.fillRect(0, 0, W, H);
+  const top = Math.max(10, ...altHist, parseFloat($('altIn').value) || 0) * 1.15;
+  x.strokeStyle = '#2a2e35'; x.fillStyle = '#6b7480'; x.font = '11px sans-serif'; x.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = H - 6 - (i / 4) * (H - 12);
+    x.beginPath(); x.moveTo(28, y); x.lineTo(W, y); x.stroke();
+    x.fillText((top * i / 4).toFixed(0), 2, y + 4);
+  }
+  if (altHist.length < 2) return;
+  x.strokeStyle = '#4cc2ff'; x.lineWidth = 2; x.beginPath();
+  altHist.forEach((a, i) => {
+    const px = 28 + (i / 199) * (W - 28);
+    const py = H - 6 - (a / top) * (H - 12);
+    i ? x.lineTo(px, py) : x.moveTo(px, py);
+  });
+  x.stroke();
+}
+
+/* ===================== ส่วนที่ 4: มุมมองการเคลื่อนที่ (ขวา) ===================== */
+function drawMove(s) {
+  const c = $('move'), x = c.getContext('2d'), W = c.width, H = c.height;
+  x.fillStyle = '#101216'; x.fillRect(0, 0, W, H);
+
+  // หาขนาดแผนที่ให้พอดีกับรูปที่วางแผนและเส้นที่บิน
+  let ext = 20;
+  for (const p of [...s.plan, ...s.trail, [s.n, s.e]]) ext = Math.max(ext, Math.abs(p[0]), Math.abs(p[1]));
+  ext *= 1.2;
+  const k = (W / 2) / ext;
+  const X = e => W / 2 + e * k, Y = n => H / 2 - n * k;
+
+  // เส้นกริดทุกๆ step เมตร
+  let step = 1;
+  for (const st of [1, 2, 5, 10, 20, 50, 100]) { step = st; if (ext / st <= 6) break; }
+  x.strokeStyle = '#1e222a'; x.fillStyle = '#4a5260'; x.font = '11px sans-serif'; x.lineWidth = 1;
+  for (let v = -Math.floor(ext / step) * step; v <= ext; v += step) {
+    x.beginPath(); x.moveTo(X(v), 0); x.lineTo(X(v), H); x.stroke();
+    x.beginPath(); x.moveTo(0, Y(v)); x.lineTo(W, Y(v)); x.stroke();
+    if (v !== 0) { x.fillText(v + 'm', X(v) + 2, H / 2 + 12); x.fillText(v + 'm', W / 2 + 3, Y(v) - 2); }
+  }
+  x.strokeStyle = '#3b4250'; x.lineWidth = 1.5;
+  x.beginPath(); x.moveTo(W / 2, 0); x.lineTo(W / 2, H); x.stroke();
+  x.beginPath(); x.moveTo(0, H / 2); x.lineTo(W, H / 2); x.stroke();
+  x.fillStyle = '#9aa4b2'; x.font = '13px sans-serif';
+  x.fillText('N', W / 2 + 6, 14); x.fillText('E', W - 16, H / 2 - 6);
+
+  const line = (arr, color, w, dash) => {
+    if (arr.length < 2) return;
+    x.strokeStyle = color; x.lineWidth = w; x.setLineDash(dash || []);
+    x.lineJoin = 'round'; x.beginPath();
+    arr.forEach((p, i) => i ? x.lineTo(X(p[1]), Y(p[0])) : x.moveTo(X(p[1]), Y(p[0])));
+    x.stroke(); x.setLineDash([]);
+  };
+  line(s.plan, '#5b7cff', 2, [6, 5]);   // เส้นที่วางแผน (ประ)
+  line(s.trail, '#ff9f43', 3);          // เส้นที่บินจริง
+
+  // จุดเริ่มต้น (บ้าน)
+  x.strokeStyle = '#9aa4b2'; x.lineWidth = 2;
+  x.beginPath(); x.moveTo(X(0) - 6, Y(0) - 6); x.lineTo(X(0) + 6, Y(0) + 6);
+  x.moveTo(X(0) + 6, Y(0) - 6); x.lineTo(X(0) - 6, Y(0) + 6); x.stroke();
+
+  // ตำแหน่งโดรน
+  x.fillStyle = '#1f9d55'; x.strokeStyle = '#fff'; x.lineWidth = 2;
+  x.beginPath(); x.arc(X(s.e), Y(s.n), 8, 0, 7); x.fill(); x.stroke();
+}
+
+/* ===================== ส่วนที่ 5: ถามสถานะจากเซิร์ฟเวอร์ ===================== */
+function update(s) {
+  $('connDot').className = 'dot' + (s.connected ? ' on' : '');
+  $('conn').textContent = s.connected ? 'เชื่อมต่อโดรนแล้ว' : 'โดรนไม่ตอบสนอง';
+  $('alt').textContent = s.alt.toFixed(1);
+  const top = Math.max((parseFloat($('altIn').value) || 15) * 1.2, 10);
+  $('fill').style.height = Math.min(100, Math.max(0, s.alt / top * 100)) + '%';
+  $('armed').textContent = s.armed ? 'ติดเครื่อง' : 'ดับเครื่อง';
+  $('mode').textContent = s.mode;
+  $('status').textContent = s.status;
+  $('n').textContent = s.n.toFixed(1);
+  $('e').textContent = s.e.toFixed(1);
+  $('dist').textContent = Math.hypot(s.n, s.e).toFixed(1);
+  $('start').disabled = s.running;
+
+  altHist.push(s.alt); if (altHist.length > 200) altHist.shift();
+  drawAlt(); drawMove(s);
+
+  const lg = $('log'), atBottom = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 20;
+  lg.textContent = s.log.join('\n');
+  if (atBottom) lg.scrollTop = lg.scrollHeight;
+}
+
+async function tick() {
+  try { update(await (await fetch('/state')).json()); }
+  catch (e) { $('connDot').className = 'dot'; $('conn').textContent = 'ต่อเซิร์ฟเวอร์ไม่ได้'; }
+}
+setInterval(tick, 300);
+tick();
+</script>
+</body>
+</html>
