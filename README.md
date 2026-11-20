@@ -10,21 +10,72 @@
 | `server.py` | รับรูปจากหน้าเว็บ แล้วสั่งโดรนบิน (Flask + pymavlink) |
 | `index.html` | หน้าเว็บ มีกระดานวาด กราฟความสูง และแผนที่การเคลื่อนที่ |
 | `fly.py` | สคริปต์ทดสอบบินแบบไม่มีหน้าเว็บ (ขึ้น-ลงจอด / รูปหัวใจ) |
-| `venv/` | virtual environment (มี pymavlink และ flask) |
+| `requirements.txt` | รายการไลบรารี Python ที่ต้องติดตั้ง |
+| `venv/` | virtual environment (ไม่ต้องอัปโหลดขึ้น GitHub) |
 
 `server.py` และ `index.html` ต้องอยู่โฟลเดอร์เดียวกัน ไม่งั้นหน้าเว็บจะขึ้น 404
 
-## ที่ต้องติดตั้งไว้ก่อน (ทำครั้งเดียว)
+## ติดตั้งโปรเจกต์จาก GitHub (เครื่องใหม่หรือโหลดมาใช้)
 
-1. WSL2 + Ubuntu, VS Code (พร้อม extension WSL)
-2. ArduPilot ที่ `~/ardupilot` (ตัวจำลองโดรน)
-3. QGroundControl บน Windows (Comm Link ชื่อ `SITL`, TCP, 127.0.0.1, พอร์ต 5760)
-4. ไลบรารี Python ใน venv:
-   ```
-   cd ~/drone_project
-   source venv/bin/activate
-   pip install pymavlink flask
-   ```
+**1. ติดตั้งโปรแกรมพื้นฐาน**
+- Windows: VS Code (พร้อม extension WSL), WSL2 + Ubuntu (`wsl --install` ใน PowerShell แบบ Administrator)
+- Ubuntu:
+  ```
+  sudo apt update
+  sudo apt install -y git python3 python3-pip python3-venv
+  ```
+
+**2. ติดตั้งตัวจำลองโดรน ArduPilot**
+```
+cd ~
+git clone --recurse-submodules https://github.com/ArduPilot/ardupilot.git
+cd ardupilot
+Tools/environment_install/install-prereqs-ubuntu.sh -y
+. ~/.profile
+```
+ขั้นนี้ใช้เวลานานที่สุด
+
+**3. ติดตั้ง QGroundControl (Windows)**
+โหลดจาก qgroundcontrol.com แล้วตั้ง Application Settings > Comm Links > Add: Name `SITL`, Type `TCP`, Address `127.0.0.1`, Port `5760`
+
+**4. โหลดโปรเจกต์นี้**
+```
+cd ~
+git clone https://github.com/ชื่อบัญชี/ชื่อ-repo.git drone_project
+cd drone_project
+```
+(ถ้าโหลดเป็นไฟล์ ZIP ให้แตกไฟล์ไว้ที่ `~/drone_project`)
+
+**5. ติดตั้งไลบรารีด้วย requirements.txt**
+```
+cd ~/drone_project
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+ทดสอบว่าลงสำเร็จ:
+```
+python -c "import pymavlink, flask; print('OK')"
+```
+
+## ติดตั้งไลบรารีด้วย requirements.txt
+
+`requirements.txt` คือรายการไลบรารีที่โปรเจกต์ต้องใช้ ติดตั้งทั้งหมดด้วยคำสั่งเดียว
+
+| ต้องการ | คำสั่ง (ต้องมี `(venv)` หน้าบรรทัด) |
+|---|---|
+| ติดตั้งทุกตัวตามรายการ | `pip install -r requirements.txt` |
+| ดูว่าลงอะไรไว้บ้าง | `pip list` |
+| สร้างรายการจากที่ลงไว้ตอนนี้ | `pip freeze > requirements.txt` |
+| อัปเดตไลบรารี | `pip install --upgrade -r requirements.txt` |
+
+เนื้อหาในไฟล์:
+```
+pymavlink
+flask
+```
+
+ถ้าติดตั้งแล้ว error เรื่อง Python 3.14 ให้เก็บข้อความ error ไว้ตรวจสอบ ไลบรารีบางตัวอาจยังไม่รองรับ Python เวอร์ชันใหม่มาก
 
 ## วิธีรัน (ต้องเรียงตามลำดับ)
 
@@ -66,7 +117,7 @@ python server.py
 - **กระดานกลาง:** กดค้างแล้วลากเมาส์วาด จุดเขียว = จุดเริ่มวาด จุดแดง = จุดจบ
 - **ขนาดรูปจริง (เมตร):** ด้านที่ยาวที่สุดของรูปจะเท่ากับค่านี้ (ตั้งต้น 30)
 - **ความสูงที่บิน (เมตร):** ตั้งต้น 15 (ช่วง 3-60)
-- **เริ่มบิน:** ส่งรูปให้โดรน ลำดับคือ GUIDED > ติดเครื่อง > ขึ้นบิน > บินตามรูป > กลับจุดเริ่มต้น > ลงจอด
+- **เริ่มบิน:** ลำดับคือ GUIDED > ติดเครื่อง > ขึ้นบิน > บินตามรูป > กลับจุดเริ่มต้น > ลงจอด
 - **หยุดและลงจอด:** ยกเลิกแล้วสั่งลงจอดทันที
 - **ล้างกระดาน:** วาดใหม่
 - **ซ้าย:** ความสูง แถบวัด กราฟย้อนหลัง สถานะ โหมด
@@ -86,6 +137,7 @@ python server.py
 |---|---|
 | หน้าเว็บขึ้น 404 | หา `index.html` ไม่เจอ ตรวจด้วย `ls ~/drone_project` ว่าชื่อถูกและอยู่ข้าง `server.py` แล้วกด F5 |
 | `server.py` ขึ้น "เชื่อมต่อไม่ได้" | ตัวจำลองยังไม่รัน หรือยังไม่ได้ Connect QGroundControl ทำข้อ 2-3 ให้ครบแล้วรันใหม่ |
+| `ModuleNotFoundError: flask` หรือ `pymavlink` | ยังไม่ได้ลงไลบรารี หรือไม่ได้อยู่ใน venv ให้รัน `source venv/bin/activate` แล้ว `pip install -r requirements.txt` |
 | `python: command not found` | ยังไม่เข้า venv ให้รัน `source venv/bin/activate` |
 | `sim_vehicle.py: command not found` | รัน `. ~/.profile` ก่อน |
 | กดเริ่มแล้วค้างที่ "กำลังติดเครื่อง" | GPS จำลองยังไม่พร้อม รอ 1-3 นาที ดูข้อความ [โดรนแจ้ง] ในกล่องบันทึก |
